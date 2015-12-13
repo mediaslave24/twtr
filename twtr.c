@@ -4,159 +4,189 @@
 #include <stdio.h>
 #include <oauth.h>
 #include <ctype.h>
-#include <time.h>
-#include <bstrlib.h>
-
-#define CONSUMER_KEY_SIZE 128
-#define NONCE_SIZE 32
-#define CHECK(p) if(!(p)) goto error
-
-char *consumer_secret = "shit";
-char *consumer_key = "my_consumer_key";
-OAuthMethod method = OA_HMAC;
-
-void die(char *msg)
-{
-  printf(msg);
-  exit(1);
-}
-
-void *
-ecalloc(size_t nmemb, size_t size)
-{
-	void *p;
-
-	if (!(p = calloc(nmemb, size)))
-		perror(NULL);
-	return p;
-}
-
-bstring oauth_signature_method_bstr(OAuthMethod m)
-{
-  bstring name;
-  switch(m) {
-    case OA_HMAC:
-      name = bfromcstr("HMAC-SHA1");
-      break;
-    case OA_RSA:
-      name = bfromcstr("RSA-SHA1");
-      break;
-    case OA_PLAINTEXT:
-      name = bfromcstr("PLAINTEXT");
-      break;
-    default:
-      die("Unknown signature method\n");
-  }
-  CHECK(name != NULL);
-  return name;
-error:
-  return NULL;
-}
-
-typedef struct _oauth_header {
-  bstring consumer_key;
-  bstring nonce;
-  bstring signature;
-  OAuthMethod signature_method;
-  time_t timestamp;
-} oauth_header;
-
-oauth_header *oauth_header_new(
-    OAuthMethod signature_method,
-    bstring consumer_key,
-    bstring signature_base,
-    bstring signature_key
-    )
-{
-char *(*sign)(const char *, const char *);
-char *p;
-  oauth_header *h = calloc(1, sizeof(oauth_header));
-  CHECK(h != NULL);
-  h->consumer_key = consumer_key;
-  CHECK((p = oauth_gen_nonce()) != NULL);
-  CHECK((h->nonce = bfromcstr(p)) != NULL);
-  CHECK(h->nonce != NULL);
-  free(p);
-
-  switch(h->signature_method) {
-    case OA_HMAC:
-      sign = oauth_sign_hmac_sha1;
-      break;
-    case OA_PLAINTEXT:
-      sign = oauth_sign_plaintext;
-      break;
-    case OA_RSA:
-      sign = oauth_sign_rsa_sha1;
-      break;
-    default:
-      die("Unknown signature method\n");
-  }
-  h->signature_method = signature_method;
-
-  p = sign((const char *) signature_base->data, (const char *) signature_key->data);
-  CHECK(p != NULL);
-  h->signature = bfromcstr(p);
-  CHECK(h->signature != NULL);
-  free(p);
-  ctime(&h->timestamp);
-  return h;
-
-error:
-  return NULL;
-}
-
-void oauth_header_destroy(oauth_header *h)
-{
-  bdestroy(h->signature);
-  bdestroy(h->nonce);
-  bdestroy(h->consumer_key);
-  free(h);
-}
-
-bstring oauth_header_bstr(oauth_header *h)
-{
-  bstring str;
-  bstring signature_method = oauth_signature_method_bstr(h->signature_method);
-  CHECK(signature_method != NULL);
-
-  str = bformat(
-      "oauth_consumer_key=\"%s\"\n"
-      "oauth_nonce=\"%s\"\n"
-      "oauth_signature=\"%s\"\n"
-      "oauth_signature_method=\"%s\"\n"
-      "oauth_timestamp=\"%u\"\n"
-      "oauth_version=\"1.0\"\n"
-      , h->consumer_key->data
-      , h->nonce->data
-      , h->signature->data
-      , signature_method->data
-      , h->timestamp);
-
-  return str;
-
-error:
-  return NULL;
-}
-
+#include <curl.h>
+#include "util.h"
+#include "oauth_header.h"
 void usage(const char *basename)
 {
   printf(
-    "Usage: %s\n"
-    "Program for reading twitter\n"
+    "Usage: %s -s consumer-secret -k consumer-key\n"
   , basename);
+}
+
+static void strtoupper(char *str, unsigned int len)
+{
+  for(int i = 0; i < len && str[i] != '\0'; i++)
+    str[i] = toupper(str[i]);
+}
+
+struct buf {
+  char *begin;
+  char *end;
+  size_t size;
+};
+
+struct buf* buf_new()
+{
+  struct buf*b = calloc(1, sizeof(struct buf));
+  b->end = NULL;
+  b->size = 128;
+  b->begin = calloc(1, b->size);
+  return b;
+}
+
+void buf_append(struct buf*b, char*data, size_t size)
+{
+int offset = 0;
+
+  if(b->end == NULL)
+    b->end = b->begin;
+
+  while(size - (offset = b->end - b->begin) < size)
+  {
+    b->begin = realloc(b->begin, (b->size += 128));
+    b->end = b->begin + offset;
+  }
+
+  for(int i = 0; i < size; b->end += 1, data+= 1, i++)
+    *b->end = *data;
+}
+
+static size_t get_response(char *p, size_t size, size_t n, void *resp)
+{
+  struct buf *b = (struct buf*) resp;
+  size_t s = size * n;
+  buf_append(b, p, s);
+  return s;
+}
+
+char *twitter_oauth_header(const char *consumer_key, const char *consumer_secret,
+    const char *http_method, const char *url, const char *params,
+    const char *oauth_callback, const char *oauth_token, const char *token_secret)
+{
+char *p;
+
+  int bufsize = 256;
+  char *buf = calloc(1, bufsize);
+
+  char *_url = oauth_url_escape(url);
+  char *_params = oauth_url_escape(params);
+  char *_http_method = strdup(http_method);
+  strtoupper(_http_method, strlen(_http_method));
+
+  int signature_base_len = strlen(_url) + strlen(_params) + strlen(_http_method) + 3;
+  char *signature_base = calloc(1, signature_base_len);
+  int signature_key_len = strlen(consumer_secret) + strlen(token_secret) + 2;
+  char *signature_key = calloc(1, signature_key_len);
+
+  snprintf(signature_base, signature_base_len, "%s&%s&%s", _http_method, _url, _params);
+  snprintf(signature_key, signature_key_len, "%s&%s", consumer_secret, token_secret);
+
+  p = oauth_sign_hmac_sha1(signature_base, signature_key);
+  char *signature = oauth_url_escape(p);
+  free(p);
+  char *nonce = oauth_gen_nonce();
+  time_t timestamp = time(NULL);
+
+  if(strlen(oauth_token) > 0)
+    while((snprintf(buf, bufsize,
+          "Authorization: OAuth "
+          "oauth_callback=\"%s\", "
+          "oauth_consumer_key=\"%s\", "
+          "oauth_nonce=\"%s\", "
+          "oauth_signature=\"%s\", "
+          "oauth_signature_method=\"HMAC-SHA1\", "
+          "oauth_timestamp=\"%ld\", "
+          "oauth_token=\"%s\", "
+          "oauth_version=\"1.0\""
+          , oauth_callback, consumer_key, nonce, signature, timestamp, token_secret)) >= (bufsize-1))
+    {
+      buf = realloc(buf, (bufsize += 128));
+    }
+  else
+    while((snprintf(buf, bufsize,
+         "Authorization: OAuth "
+          "oauth_callback=\"%s\", "
+          "oauth_consumer_key=\"%s\", "
+          "oauth_nonce=\"%s\", "
+          "oauth_signature=\"%s\", "
+          "oauth_signature_method=\"HMAC-SHA1\", "
+          "oauth_timestamp=\"%ld\", "
+          "oauth_version=\"1.0\""
+          , oauth_callback, consumer_key, nonce, signature, timestamp)) >= (bufsize-1))
+    {
+      printf("Realloc\n");
+      buf = realloc(buf, (bufsize += 128));
+    }
+  free(_url);
+  free(_params);
+  free(_http_method);
+  free(signature_base);
+  free(signature_key);
+  free(signature);
+  free(nonce);
+
+  return buf;
 }
 
 int main(int argc, const char *argv[])
 {
+
+int status = 0;
+const char *consumer_key = NULL;
+const char *consumer_secret = NULL;
+
   for(int i = 1; i < argc; i++)
     if(!(strcmp(argv[i], "-h")))
       usage(argv[0]);
-  oauth_header *h = oauth_header_new(
-      OA_HMAC,
-      bfromcstr(consumer_key),
-      bfromcstr("base"),
-      bfromcstr("key")
-      );
-  printf("%s\n", oauth_header_bstr(h)->data);
-  return 0;
+    else if(!(strcmp(argv[i], "-k")))
+      consumer_key = argv[++i];
+    else if(!(strcmp(argv[i], "-s")))
+      consumer_secret = argv[++i];
+
+  if(consumer_key == NULL)
+  {
+    status = 1;
+    printf("Consumer key not specified\n");
+    usage(argv[0]);
+  } else if(consumer_secret == NULL)
+  {
+    status = 1;
+    printf("Consumer secret not specified\n");
+    usage(argv[0]);
+  }
+  else
+  {
+    curl_global_init(CURL_GLOBAL_ALL);
+
+    const char *http_method = "POST";
+    const char *url = "https://api.twitter.com/oauth/request_token";
+    const char *params = "";
+    char *h = twitter_oauth_header(
+          consumer_key, consumer_secret, http_method, url, params, "oob", "", "");
+    struct buf *b = buf_new();
+    struct curl_slist *headers = NULL;
+
+    curl_slist_append(headers, h);
+
+    CURL *curl = curl_easy_init();
+
+    if(curl == NULL)
+      die("Can't init curl\n");
+
+    curl_easy_setopt(curl, CURLOPT_URL, url);
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_POST, 1);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, b);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, get_response);
+    curl_easy_perform(curl);
+
+    curl_easy_cleanup(curl);
+
+    free(h);
+    curl_slist_free_all(headers);
+    curl_global_cleanup();
+  }
+
+  return status;
 }
