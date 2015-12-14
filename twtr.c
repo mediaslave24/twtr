@@ -174,11 +174,13 @@ const char *consumer_secret = NULL;
     if(curl == NULL)
       die("Can't init curl\n");
 
+    curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
     curl_easy_setopt(curl, CURLOPT_URL, url);
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-    curl_easy_setopt(curl, CURLOPT_POST, 1);
+    curl_easy_setopt(curl, CURLOPT_POST, 1L);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, b);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, get_response);
+
     curl_easy_perform(curl);
 
     curl_easy_cleanup(curl);
