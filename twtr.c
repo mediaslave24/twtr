@@ -20,37 +20,11 @@ static void strtoupper(char *str, unsigned int len)
     str[i] = toupper(str[i]);
 }
 
-struct buf {
-  char *begin;
+static struct buf {
+  char *data;
   char *end;
   size_t size;
 };
-
-struct buf* buf_new()
-{
-  struct buf*b = calloc(1, sizeof(struct buf));
-  b->end = NULL;
-  b->size = 128;
-  b->begin = calloc(1, b->size);
-  return b;
-}
-
-void buf_append(struct buf*b, char*data, size_t size)
-{
-int offset = 0;
-
-  if(b->end == NULL)
-    b->end = b->begin;
-
-  while(size - (offset = b->end - b->begin) < size)
-  {
-    b->begin = realloc(b->begin, (b->size += 128));
-    b->end = b->begin + offset;
-  }
-
-  for(int i = 0; i < size; b->end += 1, data+= 1, i++)
-    *b->end = *data;
-}
 
 static size_t get_response(char *p, size_t size, size_t n, void *resp)
 {

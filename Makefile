@@ -1,10 +1,7 @@
 include config.mk
 
-BSTRLIB = bstrlib
-VPATH = .:${BSTRLIB}
-
-HEADERS = bstrlib.h util.h
-SRC = twtr.c bstrlib.c util.c
+HEADERS = util.h
+SRC = twtr.c util.c
 OBJ = ${SRC:.c=.o}
 
 all: twtr
