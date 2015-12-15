@@ -1,7 +1,7 @@
 include config.mk
 
-HEADERS = util.h twitter_oauth_header.h httprequest.h
-SRC = twtr.c util.c twitter_oauth_header.c httprequest.c
+HEADERS = util.h httprequest.h
+SRC = twtr.c util.c httprequest.c
 OBJ = ${SRC:.c=.o}
 
 all: twtr
