@@ -1,4 +1,5 @@
 #include "twitter_oauth_header.h"
+#include "util.h"
 
 static void strtoupper(char *str, unsigned int len)
 {
@@ -26,6 +27,8 @@ static char *gen_signature_base(const char *http_method, const char *url, const 
   buf = calloc(1, size);
   if(buf == NULL)
     return NULL;
+  log_debug("Generating sugnature_base from http_method: \"%s\", url: \"%s\", params: \"%s\"",
+      _http_method, _url, _params);
   snprintf(buf, size, "%s&%s&%s", _http_method, _url, _params);
 
   free(_url);
@@ -39,6 +42,8 @@ static char *gen_signature_key(const char *consumer_secret, const char *token_se
 {
   int size = strlen(consumer_secret) + strlen(token_secret) + 2;
   char *key = calloc(1, size);
+  log_debug("Generating signature key from consumer_secret: \"%s\", token_secret: \"%s\"",
+      consumer_secret, token_secret);
   snprintf(key, size, "%s&%s", consumer_secret, token_secret);
   return key;
 }
@@ -56,6 +61,7 @@ char *twitter_oauth_header(const char *consumer_key, const char *consumer_secret
   char *signature_base = gen_signature_base(http_method, url, params);
   char *signature_key = gen_signature_key(consumer_secret, token_secret);
   p = oauth_sign_hmac_sha1(signature_base, signature_key);
+  log_debug("Generating signature from base: \"%s\", key: \"%s\"", signature_base, signature_key);
   char *signature = oauth_url_escape(p);
   free(p);
   free(signature_base);
@@ -94,7 +100,6 @@ char *twitter_oauth_header(const char *consumer_key, const char *consumer_secret
           "oauth_version=\"1.0\""
           , oauth_callback, consumer_key, nonce, signature, timestamp)) >= (bufsize-1))
     {
-      printf("Realloc\n");
       buf = realloc(buf, (bufsize += 128));
     }
   free(signature);
