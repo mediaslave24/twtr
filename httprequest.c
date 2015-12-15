@@ -1,5 +1,7 @@
 #include "httprequest.h"
 
+static long verbose = 0;
+
 struct buf {
   char *data;
   char *end;
@@ -15,6 +17,9 @@ void httprequest_cleanup()
 {
   curl_global_cleanup();
 }
+
+void httprequest_verbose(long val)
+{ verbose = val; }
 
 static size_t write(char *p, size_t n, size_t s, void *out)
 {
@@ -71,6 +76,8 @@ char *httprequest(HTTP_METHOD m, char *url, long include_header, char **headers)
 
   curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write);
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, &buf);
+
+  curl_easy_setopt(curl, CURLOPT_VERBOSE, verbose);
 
   curl_easy_perform(curl);
 
