@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <oauth.h>
 #include <ctype.h>
+#include <time.h>
 
 char *twitter_oauth_header(const char *consumer_key, const char *consumer_secret,
     const char *http_method, const char *url, const char *params,
