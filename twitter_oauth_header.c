@@ -22,7 +22,7 @@ static char *gen_signature_base(const char *http_method, const char *url, const 
 
   strtoupper(_http_method, strlen(_http_method));
 
-  size = strlen(_url) + strlen(_params) + strlen(_http_method) + 3
+  size = strlen(_url) + strlen(_params) + strlen(_http_method) + 3;
   buf = calloc(1, size);
   if(buf == NULL)
     return NULL;
@@ -37,7 +37,7 @@ static char *gen_signature_base(const char *http_method, const char *url, const 
 
 static char *gen_signature_key(const char *consumer_secret, const char *token_secret)
 {
-  int size = strlen(strlen(consumer_secret) + strlen(token_secret) + 2)
+  int size = strlen(consumer_secret) + strlen(token_secret) + 2;
   char *key = calloc(1, size);
   snprintf(key, size, "%s&%s", consumer_secret, token_secret);
   return key;
